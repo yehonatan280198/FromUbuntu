@@ -1,0 +1,7 @@
+PROBLEM_FILE = /home/yonikid/Desktop/SimulatorAgents/pRobustCbss/GLKH-1.1/TMP/mtspf.pid4442.post.tsp
+MAX_TRIALS = 22
+OPTIMUM = 2
+PRECISION = 100
+RUNS = 1
+SEED = 1
+TOUR_FILE = TMP/mtspf.pid4442.post.tour

@@ -1,0 +1,7 @@
+PROBLEM_FILE = /home/yonikid/Desktop/SimulatorAgents/pRobustCbss/GLKH-1.1/TMP/mEgtspf.pid4267.post.tsp
+MAX_TRIALS = 30
+OPTIMUM = -1899992
+PRECISION = 100
+RUNS = 1
+SEED = 1
+TOUR_FILE = TMP/mEgtspf.pid4267.post.tour

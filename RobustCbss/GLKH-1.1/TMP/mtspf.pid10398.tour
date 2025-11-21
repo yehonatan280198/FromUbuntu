@@ -1,0 +1,21 @@
+NAME : mtspf.pid10398.gtsp.21374856.tour
+COMMENT : Length = 21374856
+COMMENT : Found by LKH [Keld Helsgaun] Sun Jan 19 17:29:19 2025
+TYPE : TOUR
+DIMENSION : 13
+TOUR_SECTION
+1
+5
+2
+3
+4
+8
+9
+6
+7
+13
+10
+11
+12
+-1
+EOF
