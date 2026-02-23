@@ -1,2 +1,0 @@
-Map,Inactive agent acts as an obstacle,Desired Safe prob,Number of agents,Number of goals,Type of allocation,Instance,Runtime,Offline Runtime,Online Runtime,Number Of Replans,Online SST,Sum of Planning Times for All Goals,SGAT,Offline SST,Number of Expands
-maze-32-32-2,True,0.6,250,50,Heuristic,1,0.29,0.29,0,0,159,14.508,173.508,65,1.0

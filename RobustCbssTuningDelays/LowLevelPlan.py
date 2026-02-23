@@ -13,12 +13,12 @@ def extractPath(state):
 
 ########################################################## LowLevelPlan Class #####################################################3
 
-
 class LowLevelPlan:
-    def __init__(self, dict_of_map_and_dim, AgentLocations, dict_cost_for_Heuristic_value):
+    def __init__(self, dict_of_map_and_dim, AgentLocations, dict_cost_for_Heuristic_value, optimize):
         self.MapAndDims = dict_of_map_and_dim
         self.AgentLocations = AgentLocations
         self.dict_cost_for_Heuristic_value = dict_cost_for_Heuristic_value
+        self.optimize = optimize
 
     def runLowLevelPlan(self, Node, agent_that_need_update_path):
         for agent in agent_that_need_update_path:
@@ -30,14 +30,20 @@ class LowLevelPlan:
                 continue
 
             # Decrease the previous path cost of the current agent
-            Node.g -= Node.paths[agent]["cost"]
+            if self.optimize != "MAKESPAN":
+                Node.g -= Node.paths[agent]["cost"]
+            else:
+                Node.g = max((data["cost"] for agent_id, data in Node.paths.items() if agent_id != agent), default=0)
 
             findPath = False
             OpenList = []
             visited = {}
 
             S = State(self.AgentLocations[agent], sequence=[self.AgentLocations[agent]], t=0)
-            heapq.heappush(OpenList, (self.calc_cost_for_Heuristic_value(S, sequence), S))
+            if self.optimize == "SST":
+                heapq.heappush(OpenList, (self.calc_sst_for_Heuristic_value(S, sequence), S))
+            else:
+                heapq.heappush(OpenList, (self.calc_soc_or_makespan_for_Heuristic_value(S, sequence), S))
 
             while OpenList:
                 _, S = heapq.heappop(OpenList)
@@ -50,20 +56,26 @@ class LowLevelPlan:
                     findPath = True
                     break
 
-                for Sl in self.GetNeighbors(S, agent, visited, Node, sequence):
+                for Sl in self.GetNeighbors(S, agent, Node, sequence):
                     if not visited.get((Sl.CurLocation, tuple(Sl.sequence), Sl.t), False):
-                        heapq.heappush(OpenList, (self.calc_cost_for_Heuristic_value(Sl, sequence) + Sl.g, Sl))
+                        if self.optimize == "SST":
+                            heapq.heappush(OpenList, (self.calc_sst_for_Heuristic_value(Sl, sequence) + Sl.g, Sl))
+                        else:
+                            heapq.heappush(OpenList, (self.calc_soc_or_makespan_for_Heuristic_value(Sl, sequence) + Sl.g, Sl))
 
             if not findPath:
                 return False
 
             # Extract the path from the final goal back to the start
             Node.paths[agent] = extractPath(S)
-            Node.g += S.g
+            if self.optimize != "MAKESPAN":
+                Node.g += S.g
+            else:
+                Node.g = max(S.g, Node.g)
         return True
 
     ########################################################## calc cost for Heuristic value #####################################################
-    def calc_cost_for_Heuristic_value(self, S, sequence):
+    def calc_sst_for_Heuristic_value(self, S, sequence):
         if len(S.sequence) == len(sequence):
             return 0
 
@@ -78,10 +90,22 @@ class LowLevelPlan:
 
         return total_service_time
 
-    def GetNeighbors(self, state, agent, visited, Node, sequence):
+    def calc_soc_or_makespan_for_Heuristic_value(self, S, sequence):
+        if len(S.sequence) == len(sequence):
+            return 0
+
+        current_loc = S.CurLocation
+        soc_remaining = 0
+
+        for i in range(len(S.sequence), len(sequence)):
+            soc_remaining += self.dict_cost_for_Heuristic_value[(current_loc, sequence[i])]
+            current_loc = sequence[i]
+
+        return soc_remaining
+
+    def GetNeighbors(self, state, agent, Node, sequence):
         neighbors = []
         loc = state.CurLocation
-        stay = False
 
         # Define movement candidates for the agent
         direction_moves = (loc + 1, loc + self.MapAndDims["Cols"], loc - 1, loc - self.MapAndDims["Cols"])
@@ -95,13 +119,12 @@ class LowLevelPlan:
                 else:
                     afterMoveStateSequence = state.sequence[:]
 
-                neighbors.append(State(loc_after_move, state.g + (len(sequence) - len(state.sequence)), state, afterMoveStateSequence, state.t+1))
+                step_cost = (len(sequence) - len(state.sequence)) if self.optimize == "SST" else 1
+                neighbors.append(State(loc_after_move, state.g + step_cost, state, afterMoveStateSequence, state.t + 1))
 
-            # Stay in the same place but increment g (cost)
-            if canMove == -1 and not stay:
-                stay = True
-                neighbors.append(State(loc, state.g + (len(sequence) - len(state.sequence)), state, state.sequence[:], state.t+1))
-                del visited[(loc, tuple(state.sequence), state.t)]
+        if self.validateMove(loc, agent, state, Node) == 1:
+            step_cost = (len(sequence) - len(state.sequence)) if self.optimize == "SST" else 1
+            neighbors.append(State(loc, state.g + step_cost, state, state.sequence[:], state.t + 1))
 
         return neighbors
 
@@ -128,7 +151,7 @@ class LowLevelPlan:
         # Check if the move violates any negative constraints
         for z, x, t in Node.negConstraints[agent]:
             if t == state.t + 1 and (x == loc_after_move or x == frozenset((loc, loc_after_move))):
-                return -1
+                return 0
 
         for agent1, agent2, x, t1, t2 in Node.posConstraints[agent]:
             if agent1 == agent and t1 == state.t + 1 and (

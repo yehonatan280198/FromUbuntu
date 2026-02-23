@@ -3,14 +3,13 @@ from functools import total_ordering
 
 
 class Node:
-    def __init__(self, inactiveAgents):
+    def __init__(self):
         self.paths = defaultdict(lambda: {"path": [], "cost": 0})
         self.negConstraints = defaultdict(set)
         self.posConstraints = defaultdict(set)
         self.g = 0
         self.sequence = {}
         self.isPositiveNode = False
-        self.inactiveAgents = inactiveAgents
 
     def __lt__(self, other):
         return self.g < other.g

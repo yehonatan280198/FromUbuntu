@@ -1,17 +1,15 @@
 import math
-import time
 from collections import defaultdict, deque
 import numpy as np
 import gurobipy as gp
 from gurobipy import GRB
 
-class kBestSequencingByService:
+class kBestSequencingByMakespan:
 
-    def __init__(self, AgentLocations, GoalLocations, dict_of_map_and_dim, gurobiModel, timeToOptimize = None):
+    def __init__(self, AgentLocations, GoalLocations, dict_of_map_and_dim, gurobiModel):
         self.num_agents, self.num_goals = len(AgentLocations), len(GoalLocations)
         self.nodes_dict = {"All": AgentLocations + GoalLocations, "Total": self.num_agents + self.num_goals}
         self.goal_indices = list(range(self.num_agents, self.nodes_dict["Total"]))
-        self.timeToOptimize = timeToOptimize
 
         self.MapAndDims = dict_of_map_and_dim
         self.cost_dict = self.precompute_costs(GoalLocations)
@@ -30,8 +28,10 @@ class kBestSequencingByService:
         # Flow variables for cycle elimination among goals: f[i,j] is flow on arc (i,j), it must be 0 if x[i,j]=0
         self.f = self.model.addVars(list(self.x.keys()), vtype=GRB.INTEGER, lb=0, ub=self.num_goals, name="f")
 
+        self.T = self.model.addVar(vtype=GRB.INTEGER, lb=0, name="T")
+
         # Objective: minimize the total service time across all goals
-        self.model.setObjective(gp.quicksum(self.t[j] for j in self.goal_indices), GRB.MINIMIZE)
+        self.model.setObjective(self.T, GRB.MINIMIZE)
 
         # Constraints
         for j in self.goal_indices:
@@ -74,20 +74,19 @@ class kBestSequencingByService:
         self.model.addConstr(gp.quicksum(self.f[a, j] for a in range(self.num_agents) for j in self.goal_indices if
                                          (a, j) in self.f) == self.num_goals)
 
+        for j in self.goal_indices:
+            self.model.addConstr(self.T >= self.t[j])
+
     def __iter__(self):
         return self
 
     def __next__(self):
-        s0 = time.time()
         self.model.optimize()
-        if self.timeToOptimize is not None:
-            self.timeToOptimize.value = time.time() - s0
 
         if self.model.status == GRB.INFEASIBLE or (self.model.status == GRB.TIME_LIMIT and self.model.SolCount == 0):
             return {"Allocations": {}, "Cost": math.inf}
 
         current_edges = {(i, j) for (i, j) in self.x if self.x[i, j].X > 0.5}
-        service_times = {j: round(self.t[j].X) for j in self.goal_indices}
 
         paths = {}
         for a in range(self.num_agents):
@@ -103,7 +102,7 @@ class kBestSequencingByService:
 
         # Add exclusion constraint to prevent repeating this edge set
         self.model.addConstr(gp.quicksum(self.x[i, j] for (i, j) in current_edges) <= len(current_edges) - 1)
-        return {"Allocations": paths, "Cost": sum(service_times.values())}
+        return {"Allocations": paths, "Cost": int(round(self.T.X))}
 
     def precompute_costs(self, GoalLocations):
         precomputed_cost = defaultdict(lambda: 1000000)

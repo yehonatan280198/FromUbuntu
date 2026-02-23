@@ -15,7 +15,7 @@ class Run_Simulation:
         potential_locs = []
 
         for currAgent, path in self.plan.items():
-            if self.obstacles_agents and currAgent in self.inactive_agents:
+            if currAgent in self.inactive_agents and not self.obstacles_agents:
                 continue
             currLoc = path["path"][0]
             for agent, loc in potential_locs:
@@ -46,7 +46,7 @@ class Run_Simulation:
             finish_agents = set()
 
             for agent, path in self.plan.items():
-                if self.obstacles_agents and agent in self.inactive_agents:
+                if agent in self.inactive_agents and not self.obstacles_agents:
                     continue
                 # Simulate agent movement with a delay probability
                 if len(path["path"]) != 1 and self.randGen.random() > self.delaysProb[agent]:

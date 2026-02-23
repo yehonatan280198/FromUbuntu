@@ -1,24 +1,29 @@
 import heapq
+
 from NodeStateClasses import State
 
 
-########################################################## Extract path #####################################################3
+########################################################## LowLevelPlan Class #####################################################
+
 def extractPath(state):
     agent_path_and_cost = {"path": [], "cost": state.g}
     while state is not None:
         agent_path_and_cost["path"].insert(0, state.CurLocation)
         state = state.parent
+
     return agent_path_and_cost
 
 
-########################################################## LowLevelPlan Class #####################################################3
-
-
 class LowLevelPlan:
-    def __init__(self, dict_of_map_and_dim, AgentLocations, dict_cost_for_Heuristic_value):
+    def __init__(self, dict_of_map_and_dim, AgentLocations, dict_cost_for_Heuristic_value, obstacles_agents,
+                 delaysProb, GoalLocations, inactiveAgents):
         self.MapAndDims = dict_of_map_and_dim
         self.AgentLocations = AgentLocations
         self.dict_cost_for_Heuristic_value = dict_cost_for_Heuristic_value
+        self.obstacles_agents = obstacles_agents
+        self.delaysProb = delaysProb
+        self.GoalLocations = GoalLocations
+        self.inactiveAgents = inactiveAgents
 
     def runLowLevelPlan(self, Node, agent_that_need_update_path):
         for agent in agent_that_need_update_path:
@@ -50,7 +55,7 @@ class LowLevelPlan:
                     findPath = True
                     break
 
-                for Sl in self.GetNeighbors(S, agent, visited, Node, sequence):
+                for Sl in self.GetNeighbors(S, agent, Node, sequence):
                     if not visited.get((Sl.CurLocation, tuple(Sl.sequence), Sl.t), False):
                         heapq.heappush(OpenList, (self.calc_cost_for_Heuristic_value(Sl, sequence) + Sl.g, Sl))
 
@@ -60,6 +65,7 @@ class LowLevelPlan:
             # Extract the path from the final goal back to the start
             Node.paths[agent] = extractPath(S)
             Node.g += S.g
+
         return True
 
     ########################################################## calc cost for Heuristic value #####################################################
@@ -78,7 +84,7 @@ class LowLevelPlan:
 
         return total_service_time
 
-    def GetNeighbors(self, state, agent, visited, Node, sequence):
+    def GetNeighbors(self, state, agent, Node, sequence):
         neighbors = []
         loc = state.CurLocation
         stay = False
@@ -95,13 +101,12 @@ class LowLevelPlan:
                 else:
                     afterMoveStateSequence = state.sequence[:]
 
-                neighbors.append(State(loc_after_move, state.g + (len(sequence) - len(state.sequence)), state, afterMoveStateSequence, state.t+1))
+                neighbors.append(State(loc_after_move, state.g + (len(sequence) - len(state.sequence)), state,
+                                       afterMoveStateSequence, state.t + 1))
 
-            # Stay in the same place but increment g (cost)
-            if canMove == -1 and not stay:
-                stay = True
-                neighbors.append(State(loc, state.g + (len(sequence) - len(state.sequence)), state, state.sequence[:], state.t+1))
-                del visited[(loc, tuple(state.sequence), state.t)]
+        if self.validateMove(loc, agent, state, Node) == 1:
+            step_cost = (len(sequence) - len(state.sequence))
+            neighbors.append(State(loc, state.g + step_cost, state, state.sequence[:], state.t + 1))
 
         return neighbors
 
@@ -125,6 +130,11 @@ class LowLevelPlan:
         if self.MapAndDims["Map"][loc_after_move] != 0:
             return 0
 
+        if self.obstacles_agents:
+            for anotherAgent, loc in enumerate(self.AgentLocations):
+                if loc_after_move == loc and anotherAgent in self.inactiveAgents:
+                    return 0
+
         # Check if the move violates any negative constraints
         for z, x, t in Node.negConstraints[agent]:
             if t == state.t + 1 and (x == loc_after_move or x == frozenset((loc, loc_after_move))):
@@ -140,3 +150,4 @@ class LowLevelPlan:
                 return 0
 
         return 1
+

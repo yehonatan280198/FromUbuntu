@@ -1,0 +1,11 @@
+Map,Desired Safe prob,Delay prob (Planning),Delay prob (Execution),Number of agents,Number of goals,Instance,Runtime,Offline Runtime,Online Runtime,Number Of Replans,Online Total Service Time,Sum of Planning Times for All Goals,SGAT,Offline Total Service Time,Min Safe Prob across Plans,Number of Expands
+maze-32-32-2,NotAvailable,0,0.5,10,10,1,0.707,0.213,0.494,4,397,6.214,403.214,23,NotAvailable,1.6
+maze-32-32-2,NotAvailable,0,0.5,10,10,2,0.573,0.185,0.388,3,323,4.773,327.773,5,NotAvailable,1.25
+maze-32-32-2,NotAvailable,0,0.5,10,10,3,0.428,0.345,0.083,1,287,3.869,290.869,29,NotAvailable,1.0
+maze-32-32-2,NotAvailable,0,0.5,10,10,4,0.254,0.254,0,0,441,2.536,443.536,33,NotAvailable,1.0
+maze-32-32-2,NotAvailable,0,0.5,10,10,5,0.272,0.272,0,0,282,2.716,284.716,7,NotAvailable,1.0
+maze-32-32-2,NotAvailable,0,0.5,10,10,6,0.589,0.358,0.231,2,510,5.175,515.175,26,NotAvailable,1.333
+maze-32-32-2,NotAvailable,0,0.5,10,10,7,0.266,0.266,0,0,204,2.66,206.66,5,NotAvailable,1.0
+maze-32-32-2,NotAvailable,0,0.5,10,10,8,0.55,0.329,0.221,1,260,5.495,265.495,18,NotAvailable,2.0
+maze-32-32-2,NotAvailable,0,0.5,10,10,9,0.277,0.277,0,0,349,2.775,351.775,12,NotAvailable,1.0
+maze-32-32-2,NotAvailable,0,0.5,10,10,10,0.269,0.269,0,0,324,2.694,326.694,9,NotAvailable,1.0

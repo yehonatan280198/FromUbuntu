@@ -4,41 +4,46 @@ from collections import defaultdict
 from queue import PriorityQueue
 from multiprocessing import Process, Queue, Value
 import ctypes
+import random
 
 from FindConflict import FindConflict
 from LowLevelPlan import LowLevelPlan
 from NodeStateClasses import Node
 from Verify import Verify
-from kBestSequencingByService import kBestSequencingByService
 from HeuristicAllocation import HeuristicAllocation
 
 
 class RobustPlanner:
     def __init__(self, AgentLocations, GoalLocations, desired_safe_prob, delaysProb, MapAndDims, verifyAlpha,
-                 gurobiModel, process_queue, countExpand, obstacles_agents, type_of_allocation):
+                 process_queue, countExpand, obstacles_agents, experiment, Agents_to_remove, Parameters, inactiveAgents):
+
         self.AgentLocations = AgentLocations
+        self.GoalLocations = GoalLocations
+        self.MapAndDims = MapAndDims
         self.desired_safe_prob = desired_safe_prob
         self.OPEN = PriorityQueue()
         self.Num_roots_generated = 0
         self.K_optimal_sequences = {}
-        self.final_sol = None
         self.process_queue = process_queue
         self.delaysProb = delaysProb
         self.countExpand = countExpand
+        self.obstacles_agents = obstacles_agents
 
-        if type_of_allocation != "Gurobi":
-            self.K_Best_Seq_Solver = HeuristicAllocation(self.AgentLocations, GoalLocations, MapAndDims)
+        if inactiveAgents is None:
+            self.inactiveAgents = self.getInactiveAgents(experiment, Agents_to_remove, Parameters)
         else:
-            self.K_Best_Seq_Solver = kBestSequencingByService(self.AgentLocations, GoalLocations, MapAndDims, gurobiModel)
+            self.inactiveAgents = inactiveAgents
 
-        self.LowLevelPlanner = LowLevelPlan(MapAndDims, self.AgentLocations, self.K_Best_Seq_Solver.cost_dict)
-        self.findConflict_algorithm = FindConflict(obstacles_agents)
-        self.verify_algorithm = Verify(delaysProb, desired_safe_prob, verifyAlpha, self.process_queue, self.findConflict_algorithm, obstacles_agents)
+        self.K_Best_Seq_Solver = HeuristicAllocation(self.AgentLocations, GoalLocations, MapAndDims, delaysProb,
+                                                     obstacles_agents, self.inactiveAgents, MapAndDims["nxGraph"].dictDistance)
+
+        self.LowLevelPlanner = LowLevelPlan(MapAndDims, self.AgentLocations,  MapAndDims["nxGraph"].dictDistance, obstacles_agents, delaysProb, GoalLocations, self.inactiveAgents)
+        self.findConflict_algorithm = FindConflict(obstacles_agents, self.inactiveAgents)
+        self.verify_algorithm = Verify(delaysProb, desired_safe_prob, verifyAlpha, self.findConflict_algorithm, obstacles_agents, self.inactiveAgents, self.process_queue)
 
     ####################################################### run ############################################################
 
     def run(self):
-        print("New Plan", flush=True)
         # Calculate the best sequence of task allocations (k=1)
         self.K_optimal_sequences[1] = next(self.K_Best_Seq_Solver)
         if self.K_optimal_sequences[1]['Cost'] == math.inf:
@@ -49,7 +54,7 @@ class RobustPlanner:
         self.Num_roots_generated += 1
 
         # Create the root node
-        Root = Node(self.K_optimal_sequences[1]['InactiveAgents'])
+        Root = Node()
         # Assign the best sequence of task allocations for all agents to the root node
         Root.sequence = self.K_optimal_sequences[1]
         # Generate paths and calculate the cost for the root node
@@ -63,17 +68,14 @@ class RobustPlanner:
 
             # Get the node with the lowest cost
             _, N = self.OPEN.get()
+
             # Check if a new root needs to be generated
             N = self.CheckNewRoot(N)
             if N is None:
                 continue
-
             self.countExpand.value += 1
-
             # If the paths in the current node are verified as valid, avoiding collisions with probability P, return them as the solution
             if not N.isPositiveNode and self.verify_algorithm.verify(N):
-                if self.desired_safe_prob == "NotAvailable":
-                    self.process_queue.put([dict(N.paths), N.g, N.inactiveAgents])
                 return
 
             # Identify the first conflict in the paths
@@ -95,7 +97,7 @@ class RobustPlanner:
                 if A2 is not None:
                     self.OPEN.put((A2.g, A2))
 
-            if max(agent1AndTime[1], agent2AndTime[1]) != 1:
+            if max(agent1AndTime[1], agent2AndTime[1]) != 1 and any(p != 0 for a, p in self.delaysProb.items() if a not in self.inactiveAgents):
                 A3 = self.GenChild(N, (agent1AndTime[0], agent2AndTime[0], x, agent1AndTime[1], agent2AndTime[1]))
                 self.OPEN.put((A3.g, A3))
 
@@ -103,6 +105,7 @@ class RobustPlanner:
     ####################################################### Check new root ############################################################
 
     def CheckNewRoot(self, N):
+        # print(N.g, self.K_optimal_sequences[self.Num_roots_generated]["Cost"])
         # If the current node cost is within the threshold of the current optimal sequence
         if N.g <= self.K_optimal_sequences[self.Num_roots_generated]["Cost"]:
             return N
@@ -115,7 +118,7 @@ class RobustPlanner:
             return N
 
         # Create a new root node
-        newRoot = Node(self.K_optimal_sequences[self.Num_roots_generated]["InactiveAgents"])
+        newRoot = Node()
         newRoot.sequence = self.K_optimal_sequences[self.Num_roots_generated]
         # Calculate paths and cost for the new root
         self.LowLevelPlanner.runLowLevelPlan(newRoot, list(range(len(self.AgentLocations))))
@@ -127,7 +130,7 @@ class RobustPlanner:
     ####################################################### Get conflict ############################################################
 
     def GenChild(self, N, NewCons):
-        A = Node(N.inactiveAgents)
+        A = Node()
         A.negConstraints = defaultdict(set,
                                        {agent: constraints.copy() for agent, constraints in N.negConstraints.items()})
         A.posConstraints = defaultdict(set,
@@ -153,17 +156,64 @@ class RobustPlanner:
 
         return A
 
-def planner_process(AgentLocations, GoalLocations, safe_prob, DelaysProbDict, mapAndDim, verifyAlpha, gurobiModel, queue, countExpand, obstacles_agents, type_of_allocation):
-    cbss = RobustPlanner(AgentLocations, GoalLocations, safe_prob, DelaysProbDict, mapAndDim, verifyAlpha, gurobiModel, queue, countExpand, obstacles_agents, type_of_allocation)
+    def getInactiveAgents(self, experiment, Agents_to_remove, Parameters):
+        inactiveAgents = set()
+
+        if experiment == "ConsiderAgentsWithoutDelay":
+            inactiveAgents = {a for a, p in self.delaysProb.items() if p != 0}
+
+        elif experiment == "ConsiderAllAgents":
+            return inactiveAgents
+
+        elif experiment == "RemoveRandomAgents":
+            random_order = list(range(len(self.AgentLocations)))
+            random.Random(51).shuffle(random_order)
+            inactiveAgents = random_order[:Agents_to_remove]
+
+        elif experiment == "RemoveAgentsByDelay":
+            agent_to_utility_dict = {}
+            nxGraph = self.MapAndDims["nxGraph"]
+            nxGraph.frameworkForUtility((0, 0, 0))
+            for agent, p in self.delaysProb.items():
+                loc = self.AgentLocations[agent]
+                agent_to_utility_dict[agent] = p if not nxGraph.connectivity[loc] else -math.inf
+            inactiveAgents = [k for k, _ in sorted(agent_to_utility_dict.items(), key=lambda x: x[1], reverse=True)[:Agents_to_remove]]
+
+        else:
+            # a, b, c = Parameters
+            nxGraph = self.MapAndDims["nxGraph"]
+            nxGraph.frameworkForUtility(Parameters)
+            agent_to_utility_dict = {}
+
+            for agent, p in self.delaysProb.items():
+                loc = self.AgentLocations[agent]
+
+                if experiment == "distanceUtilityWithDelay":
+                    distanceUtility = nxGraph.distance[loc] if not nxGraph.connectivity[loc] else math.inf
+                    agent_to_utility_dict[agent] = (1 - p) * distanceUtility
+
+                elif experiment == "distanceUtilityWithoutDelay":
+                    agent_to_utility_dict[agent] = nxGraph.distance[loc] if not nxGraph.connectivity[loc] else math.inf
+
+            inactiveAgents = [k for k, _ in sorted(agent_to_utility_dict.items(), key=lambda x: x[1])[:Agents_to_remove]]
+
+        return inactiveAgents
+
+
+def planner_process(AgentLocations, GoalLocations, safe_prob, DelaysProbDict, mapAndDim, verifyAlpha, queue,
+                    countExpand, obstacles_agents, experiment, Agents_to_remove, Parameters, inactiveAgents):
+    cbss = RobustPlanner(AgentLocations, GoalLocations, safe_prob, DelaysProbDict, mapAndDim, verifyAlpha,
+                         queue, countExpand, obstacles_agents, experiment, Agents_to_remove, Parameters, inactiveAgents)
     cbss.run()
 
-def run_robust_planner_with_timeout(AgentLocations, GoalLocations, safe_prob, DelaysProbDict, mapAndDim,
-                                    verifyAlpha, gurobiModel, max_planning_time, obstacles_agents, type_of_allocation):
+def run_robust_planner_with_timeout(AgentLocations, GoalLocations, safe_prob, DelaysProbDict, mapAndDim, verifyAlpha,
+                                    max_planning_time, obstacles_agents, experiment, Agents_to_remove, Parameters, inactiveAgents=None):
     queue = Queue()
     countExpand = Value(ctypes.c_long, 0)
     process = Process(
         target=planner_process,
-        args=(AgentLocations, GoalLocations, safe_prob, DelaysProbDict, mapAndDim, verifyAlpha, gurobiModel, queue, countExpand, obstacles_agents, type_of_allocation)
+        args=(AgentLocations, GoalLocations, safe_prob, DelaysProbDict, mapAndDim, verifyAlpha, queue,
+              countExpand, obstacles_agents, experiment, Agents_to_remove, Parameters, inactiveAgents)
     )
     start_time = time.time()
     process.start()
@@ -176,7 +226,7 @@ def run_robust_planner_with_timeout(AgentLocations, GoalLocations, safe_prob, De
         process.join()
 
     last_result = None
-    while not queue.empty():
+    if not queue.empty():
         last_result = queue.get_nowait()
     expansions = countExpand.value
-    return last_result, min(60, plan_time), expansions
+    return last_result, min(60.0, plan_time), expansions

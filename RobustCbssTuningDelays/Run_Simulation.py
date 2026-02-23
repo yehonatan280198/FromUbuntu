@@ -9,7 +9,7 @@ class Run_Simulation:
         self.TST = TST
         self.timestep = timestep
 
-    def Check_Potential_Conflict(self):
+    def Check_Potential_Conflict_With_Delay(self):
         potential_locs = []
 
         for currAgent, path in self.plan.items():
@@ -33,7 +33,7 @@ class Run_Simulation:
         active_agents = {agent for agent, path in self.plan.items() if len(path["path"]) > 1}
 
         while active_agents:
-            if not self.Check_Potential_Conflict():
+            if self.delaysProb[0] != 0 and not self.Check_Potential_Conflict_With_Delay():
                 return False
 
             self.timestep += 1

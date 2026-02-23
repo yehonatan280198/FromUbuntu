@@ -2,13 +2,11 @@ import heapq
 import random
 from itertools import combinations
 
-
 def create_loc_times(path):
     locTimes = {}
     for i, loc in enumerate(path["path"]):
         locTimes.setdefault(loc, i)
     return locTimes
-
 
 def create_edge_times(path):
     edgeTimes = {}
@@ -66,14 +64,14 @@ class FindConflict:
         self.cacheConflict = None
 
     def findConflict(self, N):
+        if self.delaysProb[0] == 0:
+            return findConflictWithoutDelays(N)
 
         if self.cacheConflict is not None:
             returnConflict = self.cacheConflict
             self.cacheConflict = None
             return returnConflict
 
-        if self.delaysProb[0] == 0:
-            return findConflictWithoutDelays(N)
 
         heap = []
 

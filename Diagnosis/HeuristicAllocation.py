@@ -1,127 +1,90 @@
-from collections import defaultdict, deque
-import numpy as np
 import math
 
 
 class HeuristicAllocation:
-    def __init__(self, AgentLocations, GoalLocations, dict_of_map_and_dim):
+    def __init__(self, AgentLocations, GoalLocations, dict_of_map_and_dim, delayProbDict, obsAgents, inactiveAgents, dictDistance):
         self.AgentLocations = AgentLocations
         self.GoalLocations = GoalLocations
         self.MapAndDims = dict_of_map_and_dim
-        self.cost_dict = self.precompute_costs(GoalLocations)
+        self.inactiveAgents = inactiveAgents
+        self.obsAgentLocs = [] if obsAgents == False else [l for a, l in enumerate(AgentLocations) if a in inactiveAgents]
+        self.cost_dict = dictDistance
+        self.delayProbDict = delayProbDict
 
-        self.forbidden_first_pairs = set()
+        self.forbidden_pair_alloc = {i + 1: set() for i in range(len(self.GoalLocations))}
+        self.currIndex = len(self.GoalLocations) + 1
+        self.allALloc = False
+        self.alloc = set()
 
     def __iter__(self):
         return self
 
     def __next__(self):
-        remaining_goals = set(self.GoalLocations)
-        agents_dict = {agent: {"alloc": [initLoc], "sst": 0, "dist": 0} for agent, initLoc in
-                       enumerate(self.AgentLocations)}
+        if self.allALloc:
+            return {"Allocations": {}, "Cost": math.inf}
 
-        step_index = 0
-        first_pair = None
+        while True:
+            remaining_goals = set(self.GoalLocations)
 
-        while remaining_goals:
-            bestAgent, bestGoal, bestDist, bestSst = None, None, None, float("inf")
+            agents_dict = {agent: {"alloc": [init_loc], "sst": 0, "dist": 0} for agent, init_loc
+                           in enumerate(self.AgentLocations)}
 
-            for agent, agent_data in agents_dict.items():
-                curLoc = agent_data["alloc"][-1]
-                agentDist = agent_data["dist"]
+            curr_alloc = {}
 
-                for goal in remaining_goals:
-                    if step_index == 0 and (agent, goal) in self.forbidden_first_pairs:
+            for index in range(1, len(self.GoalLocations) + 1):
+                best_agent, best_goal, best_sst = None, None, float("inf")
+
+                for agent, agent_data in agents_dict.items():
+                    if agent in self.inactiveAgents:
                         continue
+                    cur_loc = agent_data["alloc"][-1]
+                    agent_dist = agent_data["dist"]
 
-                    goalServiceTime = agentDist + self.cost_dict[(curLoc, goal)]
+                    for goal in remaining_goals:
+                        if (agent, goal) in self.forbidden_pair_alloc[index]:
+                            continue
 
-                    if goalServiceTime < bestSst:
-                        bestSst = goalServiceTime
-                        bestAgent = agent
-                        bestGoal = goal
-                        bestDist = goalServiceTime
+                        sst = agent_dist + self.cost_dict[(cur_loc, goal)]
+                        if sst < best_sst:
+                            best_sst, best_agent, best_goal = sst, agent, goal
 
-            if bestAgent is None or bestGoal is None:
-                return {"Allocations": {}, "Cost": math.inf, "InactiveAgents": []}
+                if best_goal is None:
+                    self.allALloc = True
+                    return {"Allocations": {}, "Cost": math.inf}
 
-            remaining_goals.remove(bestGoal)
-            agents_dict[bestAgent]["alloc"].append(bestGoal)
-            agents_dict[bestAgent]["sst"] += bestSst
-            agents_dict[bestAgent]["dist"] = bestDist
+                remaining_goals.remove(best_goal)
+                agents_dict[best_agent]["alloc"].append(best_goal)
+                agents_dict[best_agent]["sst"] += best_sst
+                agents_dict[best_agent]["dist"] = best_sst
+                curr_alloc[index] = (best_agent, best_goal)
 
-            if step_index == 0:
-                first_pair = (bestAgent, bestGoal)
+            self.makeConstraint(curr_alloc)
 
-            step_index += 1
+            key = frozenset((agent, tuple(data["alloc"])) for agent, data in agents_dict.items())
 
-        alloc, cost, inactiveAgents = {}, 0, set()
-        for agent, data in agents_dict.items():
-            alloc[agent] = data["alloc"]
-            cost += data["sst"]
-            if len(alloc[agent]) == 1:
-                inactiveAgents.add(agent)
-
-        self.forbidden_first_pairs.add(first_pair)
-
-        return {"Allocations": alloc, "Cost": cost, "InactiveAgents": inactiveAgents}
-
-    def precompute_costs(self, GoalLocations):
-        precomputed_cost = defaultdict(lambda: 1000000)
-        for goal in GoalLocations:
-            self.BFS(goal, precomputed_cost)
-        return precomputed_cost
-
-    def BFS(self, goal, precomputed_cost):
-        visited = np.zeros(self.MapAndDims["Cols"] * self.MapAndDims["Rows"], dtype=bool)
-        queue = deque([(goal, 0)])
-
-        while queue:
-            current_loc, cost = queue.popleft()
-
-            if visited[current_loc]:
+            if key in self.alloc:
                 continue
-            visited[current_loc] = True
 
-            precomputed_cost[(current_loc, goal)] = cost
+            self.alloc.add(key)
 
-            for neighbor_loc, new_cost in self.get_neighbors(current_loc, cost):
-                if not visited[neighbor_loc]:
-                    queue.append((neighbor_loc, new_cost))
+            alloc = {agent: data["alloc"] for agent, data in agents_dict.items()}
+            cost = sum(data["sst"] for data in agents_dict.values())
 
-    def get_neighbors(self, current_loc, cost):
-        neighbors = []
-        for neighborLoc in [current_loc + 1, current_loc + self.MapAndDims["Cols"],
-                            current_loc - 1, current_loc - self.MapAndDims["Cols"]]:
-            if self.validate_move(neighborLoc, current_loc):
-                neighbors.append((neighborLoc, cost + 1))
-        return neighbors
+            return {"Allocations": alloc, "Cost": cost}
 
-    def validate_move(self, loc_after_move, loc):
-        # Extract the agent's location and direction before taking the next step
+    def makeConstraint(self, currAlloc):
+        for key, value in reversed(list(self.forbidden_pair_alloc.items())):
+            if len(value) == len(self.AgentLocations) * (len(self.GoalLocations) - key + 1) - 1:
+                self.forbidden_pair_alloc[key] = set()
+            else:
+                self.forbidden_pair_alloc[key].add(currAlloc[key])
+                return
+        self.allALloc = True
 
-        # If the agent is at the top or bottom boundary, it cannot move up or down
-        if not (0 <= loc_after_move < self.MapAndDims["Cols"] * self.MapAndDims["Rows"]):
-            return False
-
-        # If the agent is at the right boundary, it cannot move right
-        if loc % self.MapAndDims["Cols"] == self.MapAndDims["Cols"] - 1 and loc_after_move % \
-                self.MapAndDims["Cols"] == 0:
-            return False
-
-        # If the agent is at the left boundary, it cannot move left
-        if loc % self.MapAndDims["Cols"] == 0 and loc_after_move % self.MapAndDims["Cols"] == \
-                self.MapAndDims["Cols"] - 1:
-            return False
-
-        if self.MapAndDims["Map"][loc_after_move] != 0:
-            return False
-
-        return True
-
-
-mat = {"Rows": 10, "Cols": 10, "Map": [0 for _ in range(10 * 10)]}
-agents = [4, 94]
-goals = [24, 34, 14]
-
-h = HeuristicAllocation(agents, goals, mat)
+# mat = {"Rows": 10, "Cols": 10, "Map": [0 for _ in range(10 * 10)]}
+# agents = [4, 94]
+# goals = [24, 14, 34]
+#
+# h = HeuristicAllocation(agents, goals, mat)
+# for i in range(1, 30):
+#     print(f"{i}: {next(h)}")

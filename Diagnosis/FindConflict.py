@@ -60,10 +60,11 @@ def findConflictWithoutDelays(N):
 
 
 class FindConflict:
-    def __init__(self, obstacles_agents):
+    def __init__(self, obstacles_agents, inactiveAgents):
         self.randGen = random.Random(42)
         self.obstacles_agents = obstacles_agents
         self.cacheConflict = None
+        self.inactiveAgents = inactiveAgents
 
     def findConflict(self, N):
         if self.cacheConflict is not None:
@@ -80,6 +81,13 @@ class FindConflict:
             for agent in N.paths
         }
 
+        negConstraintDict = {
+            agent: {
+                x for _, x, _ in N.negConstraints[agent]
+            }
+            for agent in N.paths
+        }
+
         agent_data = {
             agent: {
                 "locTimes": create_loc_times(N.paths[agent]),
@@ -89,14 +97,17 @@ class FindConflict:
         }
 
         for agent1, agent2 in combinations(N.paths.keys(), 2):
-            if self.obstacles_agents and (agent1 in N.inactiveAgents or agent2 in N.inactiveAgents):
+            if (agent1 in self.inactiveAgents or agent2 in self.inactiveAgents) and not self.obstacles_agents:
                 continue
             allPosConstDict = posConstraintsDict[agent1] | posConstraintsDict[agent2]
+            allNegConstDict = negConstraintDict[agent1] | negConstraintDict[agent2]
 
             locTimes1, edgeTimes1 = agent_data[agent1]["locTimes"], agent_data[agent1]["edgeTimes"]
             locTimes2, edgeTimes2 = agent_data[agent2]["locTimes"], agent_data[agent2]["edgeTimes"]
 
             for loc in locTimes1.keys() & locTimes2.keys():
+                if loc in allNegConstDict:
+                    continue
                 time1, time2 = locTimes1[loc], locTimes2[loc]
                 delta = abs(time1 - time2)
                 Time = min(time1, time2)
@@ -127,7 +138,7 @@ class FindConflict:
         potential_locs = []
 
         for currAgent, path in N.paths.items():
-            if self.obstacles_agents and currAgent in N.inactiveAgents:
+            if currAgent in self.inactiveAgents and not self.obstacles_agents:
                 continue
             currLoc = path["path"][0]
             for agent, loc, time in potential_locs:

@@ -33,13 +33,13 @@ def read_map_file(file_path):
 
 
 mapsList = ["random-32-32-20.map", "maze-32-32-2.map", "room-32-32-4.map"]
-output_dir = "Agent_Goal_locations_files"
+output_dir = "Agent_Goal_locations_files/Goals_Scale"
 os.makedirs(output_dir, exist_ok=True)
 
 for map_name in mapsList:
     mapAndDim = read_map_file(map_name)
     for instance in range(300):
-        AgentsPositions, GoalsLocations = create_locations_for_agents_And_Goals(550, 100, mapAndDim)
+        AgentsPositions, GoalsLocations = create_locations_for_agents_And_Goals(150, 500, mapAndDim)
 
         agents_file = os.path.join(output_dir,
                                    f"{map_name.split('.')[0]}_Map_Agent_Locs_instance_{instance}.txt")

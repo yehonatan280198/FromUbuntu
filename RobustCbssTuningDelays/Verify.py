@@ -59,12 +59,12 @@ class Verify:
 
     ############################################### Verify ####################################################
     def verify(self, N):
+        if self.delaysProb[0] == 0:
+            return verifyWithoutDelay(N.paths)
+
         # Check if 1-Robust
         if not self.findConflictALg.Check_Potential_Conflict_in_first_step(N):
             return False
-
-        if self.delaysProb[0] == 0:
-            return verifyWithoutDelay(N.paths)
 
         if self.typeOfVerify == "Strict":
             return self.strict_verify(N)

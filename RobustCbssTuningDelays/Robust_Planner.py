@@ -9,13 +9,15 @@ import ctypes
 from FindConflict import FindConflict
 from LowLevelPlan import LowLevelPlan
 from NodeStateClasses import Node
+from kBestSequencingByMakespan import kBestSequencingByMakespan
 from Verify import Verify
 from kBestSequencingByService import kBestSequencingByService
+from kBestSequencingBySoc import kBestSequencingBySoc
 
 
 class RobustPlanner:
     def __init__(self, AgentLocations, GoalLocations, desired_safe_prob, delaysProb, MapAndDims, verifyAlpha,
-                 gurobiModel, process_queue, typeOfVerify, countExpand):
+                 gurobiModel, process_queue, typeOfVerify, countExpand, optimize):
         self.AgentLocations = AgentLocations
         self.desired_safe_prob = desired_safe_prob
         self.OPEN = PriorityQueue()
@@ -25,9 +27,16 @@ class RobustPlanner:
         self.process_queue = process_queue
         self.delaysProb = delaysProb
         self.countExpand = countExpand
+        self.optimize = optimize
 
-        self.K_Best_Seq_Solver = kBestSequencingByService(self.AgentLocations, GoalLocations, MapAndDims, gurobiModel)
-        self.LowLevelPlanner = LowLevelPlan(MapAndDims, self.AgentLocations, self.K_Best_Seq_Solver.cost_dict)
+        if self.optimize == "SST":
+            self.K_Best_Seq_Solver = kBestSequencingByService(self.AgentLocations, GoalLocations, MapAndDims, gurobiModel)
+        if self.optimize == "SOC":
+            self.K_Best_Seq_Solver = kBestSequencingBySoc(self.AgentLocations, GoalLocations, MapAndDims, gurobiModel)
+        if self.optimize == "MAKESPAN":
+            self.K_Best_Seq_Solver = kBestSequencingByMakespan(self.AgentLocations, GoalLocations, MapAndDims, gurobiModel)
+
+        self.LowLevelPlanner = LowLevelPlan(MapAndDims, self.AgentLocations, self.K_Best_Seq_Solver.cost_dict, optimize)
         self.findConflict_algorithm = FindConflict(delaysProb)
         self.verify_algorithm = Verify(delaysProb, desired_safe_prob, verifyAlpha, self.process_queue, self.findConflict_algorithm, typeOfVerify)
 
@@ -149,17 +158,17 @@ class RobustPlanner:
 
         return A
 
-def planner_process(AgentLocations, GoalLocations, safe_prob, DelaysProbDict, mapAndDim, verifyAlpha, gurobiModel, queue, typeOfVerify, countExpand):
-    cbss = RobustPlanner(AgentLocations, GoalLocations, safe_prob, DelaysProbDict, mapAndDim, verifyAlpha, gurobiModel, queue, typeOfVerify, countExpand)
+def planner_process(AgentLocations, GoalLocations, safe_prob, DelaysProbDict, mapAndDim, verifyAlpha, gurobiModel, queue, typeOfVerify, countExpand, optimize):
+    cbss = RobustPlanner(AgentLocations, GoalLocations, safe_prob, DelaysProbDict, mapAndDim, verifyAlpha, gurobiModel, queue, typeOfVerify, countExpand, optimize)
     cbss.run()
 
 def run_robust_planner_with_timeout(AgentLocations, GoalLocations, safe_prob, DelaysProbDict, mapAndDim,
-                                    verifyAlpha, gurobiModel, max_planning_time, typeOfVerify):
+                                    verifyAlpha, gurobiModel, max_planning_time, typeOfVerify, optimize):
     queue = Queue()
     countExpand = Value(ctypes.c_long, 0)
     process = Process(
         target=planner_process,
-        args=(AgentLocations, GoalLocations, safe_prob, DelaysProbDict, mapAndDim, verifyAlpha, gurobiModel, queue, typeOfVerify, countExpand)
+        args=(AgentLocations, GoalLocations, safe_prob, DelaysProbDict, mapAndDim, verifyAlpha, gurobiModel, queue, typeOfVerify, countExpand, optimize)
     )
     start_time = time.time()
     process.start()

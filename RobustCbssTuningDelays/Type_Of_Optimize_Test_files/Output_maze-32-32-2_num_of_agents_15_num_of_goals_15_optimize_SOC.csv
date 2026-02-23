@@ -1,0 +1,11 @@
+Map,Number of agents,Number of goals,Instance,Optimize,Runtime,Online Sum of Service Time,Num Of Replans,Number of Expands
+maze-32-32-2,15,15,1,SOC,0.143,159,0,1.0
+maze-32-32-2,15,15,2,SOC,0.144,160,0,1.0
+maze-32-32-2,15,15,3,SOC,0.116,142,0,1.0
+maze-32-32-2,15,15,4,SOC,0.147,239,0,1.0
+maze-32-32-2,15,15,5,SOC,0.201,129,0,1.0
+maze-32-32-2,15,15,6,SOC,0.161,184,0,1.0
+maze-32-32-2,15,15,7,SOC,0.201,140,0,1.0
+maze-32-32-2,15,15,8,SOC,0.225,111,0,1.0
+maze-32-32-2,15,15,9,SOC,0.178,170,0,1.0
+maze-32-32-2,15,15,10,SOC,0.187,109,0,1.0
