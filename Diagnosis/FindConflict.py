@@ -60,9 +60,8 @@ def findConflictWithoutDelays(N):
 
 
 class FindConflict:
-    def __init__(self, obstacles_agents, inactiveAgents):
+    def __init__(self, inactiveAgents):
         self.randGen = random.Random(42)
-        self.obstacles_agents = obstacles_agents
         self.cacheConflict = None
         self.inactiveAgents = inactiveAgents
 
@@ -97,8 +96,6 @@ class FindConflict:
         }
 
         for agent1, agent2 in combinations(N.paths.keys(), 2):
-            if (agent1 in self.inactiveAgents or agent2 in self.inactiveAgents) and not self.obstacles_agents:
-                continue
             allPosConstDict = posConstraintsDict[agent1] | posConstraintsDict[agent2]
             allNegConstDict = negConstraintDict[agent1] | negConstraintDict[agent2]
 
@@ -138,8 +135,6 @@ class FindConflict:
         potential_locs = []
 
         for currAgent, path in N.paths.items():
-            if currAgent in self.inactiveAgents and not self.obstacles_agents:
-                continue
             currLoc = path["path"][0]
             for agent, loc, time in potential_locs:
                 if currLoc == loc and currAgent != agent:

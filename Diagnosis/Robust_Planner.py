@@ -4,7 +4,6 @@ from collections import defaultdict
 from queue import PriorityQueue
 from multiprocessing import Process, Queue, Value
 import ctypes
-import random
 
 from FindConflict import FindConflict
 from LowLevelPlan import LowLevelPlan
@@ -15,11 +14,10 @@ from HeuristicAllocation import HeuristicAllocation
 
 class RobustPlanner:
     def __init__(self, AgentLocations, GoalLocations, desired_safe_prob, delaysProb, MapAndDims, verifyAlpha,
-                 process_queue, countExpand, obstacles_agents, experiment, Agents_to_remove, Parameters, inactiveAgents):
+                 process_queue, countExpand, inactiveAgents, graphObj):
 
         self.AgentLocations = AgentLocations
         self.GoalLocations = GoalLocations
-        self.MapAndDims = MapAndDims
         self.desired_safe_prob = desired_safe_prob
         self.OPEN = PriorityQueue()
         self.Num_roots_generated = 0
@@ -27,20 +25,12 @@ class RobustPlanner:
         self.process_queue = process_queue
         self.delaysProb = delaysProb
         self.countExpand = countExpand
-        self.obstacles_agents = obstacles_agents
+        self.inactiveAgents = inactiveAgents
 
-        if inactiveAgents is None:
-            self.inactiveAgents = self.getInactiveAgents(experiment, Agents_to_remove, Parameters)
-        else:
-            self.inactiveAgents = inactiveAgents
-
-        self.K_Best_Seq_Solver = HeuristicAllocation(self.AgentLocations, GoalLocations, MapAndDims, delaysProb,
-                                                     obstacles_agents, self.inactiveAgents, MapAndDims["nxGraph"].dictDistance)
-
-        self.LowLevelPlanner = LowLevelPlan(MapAndDims, self.AgentLocations,  MapAndDims["nxGraph"].dictDistance, obstacles_agents, delaysProb, GoalLocations, self.inactiveAgents)
-        self.findConflict_algorithm = FindConflict(obstacles_agents, self.inactiveAgents)
-        self.verify_algorithm = Verify(delaysProb, desired_safe_prob, verifyAlpha, self.findConflict_algorithm, obstacles_agents, self.inactiveAgents, self.process_queue)
-
+        self.K_Best_Seq_Solver = HeuristicAllocation(self.AgentLocations, GoalLocations, self.inactiveAgents, graphObj)
+        self.LowLevelPlanner = LowLevelPlan(MapAndDims, self.AgentLocations,  graphObj.dictDistance, delaysProb, GoalLocations, self.inactiveAgents)
+        self.findConflict_algorithm = FindConflict(self.inactiveAgents)
+        self.verify_algorithm = Verify(delaysProb, desired_safe_prob, verifyAlpha, self.findConflict_algorithm, self.inactiveAgents, self.process_queue)
     ####################################################### run ############################################################
 
     def run(self):
@@ -59,7 +49,6 @@ class RobustPlanner:
         Root.sequence = self.K_optimal_sequences[1]
         # Generate paths and calculate the cost for the root node
         self.LowLevelPlanner.runLowLevelPlan(Root, list(range(len(self.AgentLocations))))
-
         # Add the root node to the open list
         self.OPEN.put((Root.g, Root))
 
@@ -156,64 +145,21 @@ class RobustPlanner:
 
         return A
 
-    def getInactiveAgents(self, experiment, Agents_to_remove, Parameters):
-        inactiveAgents = set()
-
-        if experiment == "ConsiderAgentsWithoutDelay":
-            inactiveAgents = {a for a, p in self.delaysProb.items() if p != 0}
-
-        elif experiment == "ConsiderAllAgents":
-            return inactiveAgents
-
-        elif experiment == "RemoveRandomAgents":
-            random_order = list(range(len(self.AgentLocations)))
-            random.Random(51).shuffle(random_order)
-            inactiveAgents = random_order[:Agents_to_remove]
-
-        elif experiment == "RemoveAgentsByDelay":
-            agent_to_utility_dict = {}
-            nxGraph = self.MapAndDims["nxGraph"]
-            nxGraph.frameworkForUtility((0, 0, 0))
-            for agent, p in self.delaysProb.items():
-                loc = self.AgentLocations[agent]
-                agent_to_utility_dict[agent] = p if not nxGraph.connectivity[loc] else -math.inf
-            inactiveAgents = [k for k, _ in sorted(agent_to_utility_dict.items(), key=lambda x: x[1], reverse=True)[:Agents_to_remove]]
-
-        else:
-            # a, b, c = Parameters
-            nxGraph = self.MapAndDims["nxGraph"]
-            nxGraph.frameworkForUtility(Parameters)
-            agent_to_utility_dict = {}
-
-            for agent, p in self.delaysProb.items():
-                loc = self.AgentLocations[agent]
-
-                if experiment == "distanceUtilityWithDelay":
-                    distanceUtility = nxGraph.distance[loc] if not nxGraph.connectivity[loc] else math.inf
-                    agent_to_utility_dict[agent] = (1 - p) * distanceUtility
-
-                elif experiment == "distanceUtilityWithoutDelay":
-                    agent_to_utility_dict[agent] = nxGraph.distance[loc] if not nxGraph.connectivity[loc] else math.inf
-
-            inactiveAgents = [k for k, _ in sorted(agent_to_utility_dict.items(), key=lambda x: x[1])[:Agents_to_remove]]
-
-        return inactiveAgents
-
 
 def planner_process(AgentLocations, GoalLocations, safe_prob, DelaysProbDict, mapAndDim, verifyAlpha, queue,
-                    countExpand, obstacles_agents, experiment, Agents_to_remove, Parameters, inactiveAgents):
+                    countExpand, inactiveAgents, graphObj):
     cbss = RobustPlanner(AgentLocations, GoalLocations, safe_prob, DelaysProbDict, mapAndDim, verifyAlpha,
-                         queue, countExpand, obstacles_agents, experiment, Agents_to_remove, Parameters, inactiveAgents)
+                         queue, countExpand, inactiveAgents, graphObj)
     cbss.run()
 
 def run_robust_planner_with_timeout(AgentLocations, GoalLocations, safe_prob, DelaysProbDict, mapAndDim, verifyAlpha,
-                                    max_planning_time, obstacles_agents, experiment, Agents_to_remove, Parameters, inactiveAgents=None):
+                                    max_planning_time, inactiveAgents, graphObj):
     queue = Queue()
     countExpand = Value(ctypes.c_long, 0)
     process = Process(
         target=planner_process,
         args=(AgentLocations, GoalLocations, safe_prob, DelaysProbDict, mapAndDim, verifyAlpha, queue,
-              countExpand, obstacles_agents, experiment, Agents_to_remove, Parameters, inactiveAgents)
+              countExpand, inactiveAgents, graphObj)
     )
     start_time = time.time()
     process.start()

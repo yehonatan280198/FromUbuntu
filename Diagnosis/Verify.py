@@ -1,13 +1,11 @@
 import math
 import random
-from itertools import combinations
 from scipy.stats import norm
 
 
 class Verify:
 
-    def __init__(self, delaysProb, safe_prob, verifyAlpha, findConflictALg, obstacles_agents, inactiveAgents, process_queue):
-        self.obstacles_agents = obstacles_agents
+    def __init__(self, delaysProb, safe_prob, verifyAlpha, findConflictALg, inactiveAgents, process_queue):
         self.delaysProb = delaysProb
         self.desired_safe_prob = safe_prob
         self.verifyAlpha = verifyAlpha
@@ -92,8 +90,6 @@ class Verify:
                 finish_agents = set()
 
                 for agent, info_path in paths_copy.items():
-                    if agent in self.inactiveAgents and not self.obstacles_agents:
-                        continue
                     # Current path of the agent
                     lastLoc = info_path["path"][0]
 

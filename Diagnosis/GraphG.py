@@ -2,6 +2,7 @@ import math
 from collections import defaultdict
 
 import networkx as nx
+import numpy as np
 
 
 def normalize_by_max(score):
@@ -10,18 +11,15 @@ def normalize_by_max(score):
 
 
 class GraphG:
-    def __init__(self, rows, cols, grid, agentsLoc, goalsLoc):
-        self.rows = rows
-        self.cols = cols
-        self.grid = grid  # 0 = free, 1 = blocked
+    def __init__(self, mapAndDim, agentsLoc, goalsLoc):
+        self.rows = mapAndDim["Rows"]
+        self.cols = mapAndDim["Cols"]
+        self.grid = mapAndDim["Map"]  # 0 = free, 1 = blocked
+        self.freeCells = mapAndDim["FreeCells"]
         self.agentsLoc = agentsLoc
         self.goalsLoc = goalsLoc
         self.G = self.build_graph()
-        self.dictDistance = self.CalcAllDistancesFromGoals()
-
-        self.distance = None
-        self.betweenness = None
-        self.connectivity = None
+        self.dictDistance = defaultdict(lambda: math.inf)
 
     def build_graph(self) -> nx.Graph:
         G = nx.Graph()
@@ -40,84 +38,110 @@ class GraphG:
         return G
 
     def CalcAllDistancesFromGoals(self):
-        dictDistance = defaultdict(lambda: 1000000)
         for goal in self.goalsLoc:
             distDictFromGoal = nx.single_source_shortest_path_length(self.G, goal)
             for loc, dist in distDictFromGoal.items():
-                dictDistance[(loc, goal)] = dist
+                self.dictDistance[(loc, goal)] = dist
 
-        return dictDistance
+    def all_goals_reachable_by_at_least_one_agent(self, active_agentsLoc, inactive_agentsLoc):
+        G_without_inactive_agents = self.G.copy()
+        G_without_inactive_agents.remove_nodes_from(inactive_agentsLoc)
+        for goal in self.goalsLoc:
+            reachable = nx.node_connected_component(G_without_inactive_agents, goal)
+            if not reachable.intersection(active_agentsLoc):
+                return False
 
-    def frameworkForUtility(self, parameters):
-        a, b, c = parameters
-        self.distance = self.compute_agents_tfidf() if a != 0 else None
-        # self.betweenness = self.compute_agents_betweenness() if b != 0 else None
-        self.connectivity = self.compute_agents_connectivity()
+        return True
 
-    def compute_agents_connectivity(self):
-        score = {}
-        G_without_Agents = self.G.copy()
-        G_without_Agents.remove_nodes_from(self.agentsLoc)
-        base_cc = nx.number_connected_components(G_without_Agents)
+    def compute_distance_features(self, removed_agent_idx):
 
-        for a in self.agentsLoc:
-            H2 = G_without_Agents.copy()
-            H2.add_node(a)
-            for nb in self.neighbors_free(a):
-                if nb in H2:
-                    H2.add_edge(a, nb)
-            new_cc = nx.number_connected_components(H2)
-            score[a] = base_cc > new_cc
+        removed_node = self.agentsLoc[removed_agent_idx]
+        lengths = nx.single_source_shortest_path_length(self.G, removed_node)
 
-        return score
+        agent_distances = [lengths[node] for i, node in enumerate(self.agentsLoc) if i != removed_agent_idx and node in lengths]
+        agent_distances = np.array(agent_distances)
 
-    def compute_agents_betweenness(self):
-        score = {}
-        betweenness = nx.betweenness_centrality(self.G, normalized=True)
-        for a in self.agentsLoc:
-            score[a] = betweenness.get(a)
+        min_agent = float(np.min(agent_distances)) / self.freeCells
+        mean_agent = float(np.mean(agent_distances)) / self.freeCells
 
-        return normalize_by_max(score)
+        goal_distances = [lengths[node] for node in self.goalsLoc if node in lengths]
+        goal_distances = np.array(goal_distances)
 
-    def compute_idf_mean_over_min(self):
-        idf = {}
-        for a in self.agentsLoc:
-            dists = [self.dictDistance[(a, g)] for g in self.goalsLoc]
-            d_min = min(dists)
-            d_mean = sum(dists) / len(dists)
-            idf[a] = math.log10(d_mean / d_min)
-        return idf
+        min_goal = float(np.min(goal_distances)) / self.freeCells
+        mean_goal = float(np.mean(goal_distances)) / self.freeCells
 
-    def calcTotalInverseDistToGoal(self):
-        totalInvDist = {}
-        for g in self.goalsLoc:
-            dists = [(1 / self.dictDistance[(a, g)]) for a in self.agentsLoc]
-            totalInvDist[g] = sum(dists)
+        return min_agent, mean_agent, min_goal, mean_goal
 
-        return totalInvDist
+    def removed_agent_is_articulation_point(self, removed_agent_idx):
+        removed_node = self.agentsLoc[removed_agent_idx]
+        return int(removed_node in nx.articulation_points(self.G))
 
-    def compute_agents_tfidf(self):
-        idf = self.compute_idf_mean_over_min()
-        totalInvDist = self.calcTotalInverseDistToGoal()
-        score = defaultdict(float)
-        for a in self.agentsLoc:
-            for g in self.goalsLoc:
-                invDist = 1 / self.dictDistance[(a, g)]
-                tf = invDist / totalInvDist[g]
-                score[a] += idf[a] * tf
+    def build_graph_after_removal(self, removed_agent_idx):
+        removed_node = self.agentsLoc[removed_agent_idx]
+        G2 = self.G.copy()
+        if removed_node in G2:
+            G2.remove_node(removed_node)
+        return G2
 
-        return normalize_by_max(score)
+    def removed_agent_num_components_after_removal(self, removed_agent_idx):
+        G2 = self.build_graph_after_removal(removed_agent_idx)
+        return nx.number_connected_components(G2)
 
-    def neighbors_free(self, cell):
-        neighbors = []
-        r, c = divmod(cell, self.cols)
+    def removed_agent_largest_component_ratio(self, removed_agent_idx):
+        G2 = self.build_graph_after_removal(removed_agent_idx)
 
-        for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-            nr, nc = r + dr, c + dc
-            if 0 <= nr < self.rows and 0 <= nc < self.cols:
-                nidx = nr * self.cols + nc
-                if self.grid[nidx] == 0:
-                    neighbors.append(nidx)
+        if G2.number_of_nodes() == 0:
+            return 0.0
 
-        return neighbors
+        largest_cc_size = max(len(cc) for cc in nx.connected_components(G2))
+        return largest_cc_size / G2.number_of_nodes()
+
+    def removed_agent_has_goal_component_without_other_agents(self, removed_agent_idx):
+        G2 = self.build_graph_after_removal(removed_agent_idx)
+        removed_node = self.agentsLoc[removed_agent_idx]
+
+        other_agents = set(self.agentsLoc) - {removed_node}
+        valid_goals = [g for g in self.goalsLoc if g in G2]
+
+        for cc in nx.connected_components(G2):
+            cc_set = set(cc)
+
+            goals_in_cc = any(g in cc_set for g in valid_goals)
+            agents_in_cc = any(a in cc_set for a in other_agents)
+
+            if goals_in_cc and not agents_in_cc:
+                return 1
+
+        return 0
+
+    def removed_agent_betweenness_centrality(self, removed_agent_idx):
+        removed_node = self.agentsLoc[removed_agent_idx]
+        bc = nx.betweenness_centrality(self.G, normalized=True)
+        return bc.get(removed_node, 0.0)
+
+    def compute_radius_features(self, removed_agent_idx):
+        features = {}
+        removed_node = self.agentsLoc[removed_agent_idx]
+
+        radii = (2, 4)
+        max_r = max(radii)
+        lengths = nx.single_source_shortest_path_length(self.G, removed_node, cutoff=max_r)
+
+        for r in radii:
+            nodes_in_r = {node for node, dist in lengths.items() if dist <= r}
+
+            num_close_agents = sum(1 for pos in self.agentsLoc if pos != removed_node and pos in nodes_in_r)
+
+            num_close_goals = sum(1 for goal in self.goalsLoc if goal in nodes_in_r)
+
+            local_free_space = len(nodes_in_r) - 1
+            local_free_space = max(local_free_space, 0)
+
+            features[f"Close Agents r={r}"] = num_close_agents / len(self.agentsLoc)
+            features[f"Close Goals r={r}"] = num_close_goals / len(self.goalsLoc)
+            features[f"Local Free Space r={r}"] = local_free_space / self.freeCells
+            features[f"Crowdedness Score r={r}"] = (num_close_agents / local_free_space if local_free_space > 0 else 0.0)
+            features[f"Goal Density r={r}"] = (num_close_goals / local_free_space if local_free_space > 0 else 0.0)
+
+        return features
 

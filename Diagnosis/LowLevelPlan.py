@@ -15,12 +15,11 @@ def extractPath(state):
 
 
 class LowLevelPlan:
-    def __init__(self, dict_of_map_and_dim, AgentLocations, dict_cost_for_Heuristic_value, obstacles_agents,
+    def __init__(self, dict_of_map_and_dim, AgentLocations, dict_cost_for_Heuristic_value,
                  delaysProb, GoalLocations, inactiveAgents):
         self.MapAndDims = dict_of_map_and_dim
         self.AgentLocations = AgentLocations
         self.dict_cost_for_Heuristic_value = dict_cost_for_Heuristic_value
-        self.obstacles_agents = obstacles_agents
         self.delaysProb = delaysProb
         self.GoalLocations = GoalLocations
         self.inactiveAgents = inactiveAgents
@@ -87,7 +86,6 @@ class LowLevelPlan:
     def GetNeighbors(self, state, agent, Node, sequence):
         neighbors = []
         loc = state.CurLocation
-        stay = False
 
         # Define movement candidates for the agent
         direction_moves = (loc + 1, loc + self.MapAndDims["Cols"], loc - 1, loc - self.MapAndDims["Cols"])
@@ -130,15 +128,10 @@ class LowLevelPlan:
         if self.MapAndDims["Map"][loc_after_move] != 0:
             return 0
 
-        if self.obstacles_agents:
-            for anotherAgent, loc in enumerate(self.AgentLocations):
-                if loc_after_move == loc and anotherAgent in self.inactiveAgents:
-                    return 0
-
         # Check if the move violates any negative constraints
         for z, x, t in Node.negConstraints[agent]:
             if t == state.t + 1 and (x == loc_after_move or x == frozenset((loc, loc_after_move))):
-                return -1
+                return 0
 
         for agent1, agent2, x, t1, t2 in Node.posConstraints[agent]:
             if agent1 == agent and t1 == state.t + 1 and (

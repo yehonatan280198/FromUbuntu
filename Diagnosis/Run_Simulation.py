@@ -1,8 +1,7 @@
 class Run_Simulation:
 
-    def __init__(self, plan, delaysProb, AgentLocations, GoalLocations, randGen, timestep, TST, inactive_agents, obstacles_agents):
+    def __init__(self, plan, delaysProb, AgentLocations, GoalLocations, randGen, timestep, TST, inactive_agents):
         self.inactive_agents = inactive_agents
-        self.obstacles_agents = obstacles_agents
         self.plan = plan
         self.delaysProb = delaysProb
         self.AgentLocations = AgentLocations
@@ -15,8 +14,6 @@ class Run_Simulation:
         potential_locs = []
 
         for currAgent, path in self.plan.items():
-            if currAgent in self.inactive_agents and not self.obstacles_agents:
-                continue
             currLoc = path["path"][0]
             for agent, loc in potential_locs:
                 if currLoc == loc and currAgent != agent:
@@ -46,8 +43,6 @@ class Run_Simulation:
             finish_agents = set()
 
             for agent, path in self.plan.items():
-                if agent in self.inactive_agents and not self.obstacles_agents:
-                    continue
                 # Simulate agent movement with a delay probability
                 if len(path["path"]) != 1 and self.randGen.random() > self.delaysProb[agent]:
                     # Remove the first step if the agent moves
